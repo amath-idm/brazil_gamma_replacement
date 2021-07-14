@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import sciris as sc
 import pylab as pl
-import covasim as cv
 import statsmodels.formula.api as smfa
 
 #%% Settings
@@ -15,6 +14,7 @@ do_plot = 1
 do_show = 1
 do_save = 1
 post_vx = 14 # Number of days post-vaccine to start counting
+count_both = False # Count only people who have received both doses
 
 
 #%% Load data
@@ -28,15 +28,14 @@ for key in allkeys:
     filename = datadir / (key + '.xlsx')
     print(f'Loading "{filename}" as "{key}"')
     raw[key] = pd.read_excel(filename) # Load data
-popfile = datadir / 'population.xlsx'
-rawpop = pd.read_excel(popfile)
+raw.vx_data = pd.read_excel(filename, sheet_name='paper_data_new')
 
 
 #%% Process data
 sc.heading('Processing data...')
 
 # Copy into new structure
-for key in allkeys:
+for key in raw.keys():
     d[key] = sc.dcp(raw[key])
 
 # Rename columns from e.g.  '75 A 79' to '75' and drop missing values
@@ -52,53 +51,47 @@ for key in csdkeys:
 for key in allkeys:
     d[key]['day'] = sc.day(sc.readdate(d[key].date.tolist()), start_day=start_day)
 
-# Determine age distributions
-pop_size = 464983 # Wikipedia article on "São José do Rio Preto"
-age_dist = cv.data.get_age_distribution(location='brazil')
+
+# Age calculations
 bins = list(d.cases.columns)
-for key in ['date', 'day', 'total', 'total_under65']:
+for key in ['date', 'day', 'total', 'total_under65', 'total_under60']:
     bins.remove(key)
 bins.append('100')
 bins = np.array([int(b) for b in bins])
 bin_start = bins[:-1]
 bin_end = bins[1:]
-bin_size = bin_end - bin_start
-n_bins = len(bin_start)
-pop_dist = np.zeros(n_bins)
-for i,bs in enumerate(bin_start):
-    bin_ind = sc.findlast(age_dist[:,0] <= bs)
-    prop = age_dist[bin_ind,2]
-    bin_width = age_dist[bin_ind,1] - age_dist[bin_ind,0] + 1 # +1 since listed as e.g. [40,49] instead of [40,50]
-    pop_dist[i] = pop_size * prop * bin_size[i]/bin_width
-assert np.isclose(pop_dist.sum(), pop_size) # Check our math is right, before modifying
-pop_dist[-1] = 2510/2 # From the vaccine spreadsheet, saying 2510 doses = 100% coverage for 90+
-pop_dist[-2] = 3031/0.88/2 # From the vaccine spreadsheet, saying 3031 doses = 88% coverage for 85-89
-pop_dist[-3] = 5374/0.78/2 # From the vaccine spreadsheet, saying 5374 doses = 78% coverage for 80-84
-pop_dist[-4] = 2010/0.37/2 + 4620/0.9/2 # From the vaccine spreadsheet, saying 2010 doses = 37% coverage for 77-79
-pop_dist = pop_dist.round() # Don't keep fractional people
-orig_pop_dist = sc.dcp(pop_dist)
-pop_dist = rawpop['População'].values
-
 
 # Calculate vaccine coverage
 coverage = {}
+coverage_low = {}
+coverage_high = {}
+both = {}
+both_low = {}
+both_high = {}
 coverage_start = {}
 coverage_end = {}
 for i,row in d.vaccines.iterrows():
     if np.isfinite(row.age_doses):
         age = row.age_bin
         ind = sc.findfirst(bin_start == age)
-        cov = row.age_doses/pop_dist[ind]/2 # Since need 2 doses
-        if age not in coverage:
-            coverage[age] = 0
+        if age not in coverage_start:
             coverage_start[age] = row.day
-        coverage[age] += cov
         coverage_end[age] = row.day
-        print(f'On day {row.day}, {row.age_doses} doses for {pop_dist[ind]} people aged {age} increases coverage to {coverage[age]}')
 
+for i,row in d.vx_data.iterrows():
+    age = row.age_bin
+    coverage[age] = min(1, row.cov_mean)
+    both[age] = min(1, row.both_dose_mean)
+    old = min(1, row.old_pop_new_cov)
+    new = min(1, row.old_pop_new_cov)
+    coverage_low[age] = min(old, new)
+    coverage_high[age] = max(old, new)
+
+if count_both:
+    coverage = both
 print('Final coverage values:')
-print(coverage)
-print('Warning: coverage for 75-79 looks too low, check source data!')
+for age in coverage.keys():
+    print(f'Age {age} = {coverage[age]} ({coverage_low[age]}-{coverage_high[age]})')
 
 
 #%% Analysis
@@ -110,6 +103,7 @@ res.covbins = np.array(list(coverage.keys()))
 order = np.argsort(res.covbins)
 res.covbins = res.covbins[order]
 res.coverage = np.array([coverage[k] for k in res.covbins])
+res.both = np.array([both[k] for k in res.covbins])
 res.slope = sc.objdict()
 res.slope_best = sc.objdict()
 res.slope_low = sc.objdict()
@@ -124,8 +118,8 @@ for key in csdkeys:
         strkey = str(int(cb)) # Convert e.g. 90.0 to '90'
         before = sc.findinds(d[key].day < coverage_start[cb])
         after = sc.findinds(d[key].day > (coverage_end[cb] + post_vx))
-        res[key].tot_before[i]    = d[key].total_under65[before].sum()
-        res[key].tot_after[i]     = d[key].total_under65[after].sum()
+        res[key].tot_before[i]    = d[key].total_under60[before].sum()
+        res[key].tot_after[i]     = d[key].total_under60[after].sum()
         res[key].agebin_before[i] = d[key][strkey][before].sum() # e.g. d.cases['30'][:417].sum()
         res[key].agebin_after[i]  = d[key][strkey][after].sum()
 
@@ -186,12 +180,20 @@ if do_plot:
         ax = axs[key]
 
         # Plot 1:1
-        ax.plot(xlims, -xlims, '--', lw=1, alpha=0.4, c='k')
+        plot_1_1 = False
+        if plot_1_1:
+            ax.plot(xlims, -xlims, '--', lw=1, alpha=0.4, c='k')
 
         # Plot points
         for i in range(n):
             label = covlabels[i] if key == 'cases' else None
-            ax.plot(res.coverage[i]*100, res[key].change[i], 'o', c=colors[i], label=label)
+            rcov = res.coverage[i]*100
+            rbo = res.both[i]*100
+            rch = res[key].change[i]
+            col = colors[i]
+            ax.plot(rcov, rch, 'o', c=col, label=label, markersize=8, zorder=10)
+            ax.plot(rbo, rch, 'd', c=col, alpha=0.5, markersize=6, zorder=9)
+            ax.plot([rcov, rbo], [rch]*2, '--', c=col, lw=1, alpha=0.5, zorder=8)
 
         # Plot fit
         slope = res.slope[key]
@@ -212,11 +214,11 @@ if do_plot:
         if key == 'deaths':
             ax.set_xlabel('Vaccine coverage (%)')
         ax.set_ylim([-100, 0])
-        ax.set_xlim(xlims)
+        ax.set_xlim([0,101])
         sc.boxoff(ax)
 
     if do_save:
-        cv.savefig('vaccine_efficacy.png')
+        pl.savefig('vaccine_efficacy.png')
     if do_show:
         pl.show()
 
