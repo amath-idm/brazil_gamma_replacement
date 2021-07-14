@@ -223,6 +223,20 @@ if do_plot:
         pl.show()
 
 
+r = res.slope
+rl = res.slope_low
+rh = res.slope_high
+text = f'''\
+As shown in Figure 6, vaccination was associated with a moderate reduction in the number of cases
+(best-fit slope {r.cases:0.2f}, 95% CI: {rh.cases:0.2f}, {rl.cases:0.2f}).
+However, it was associated with a pronounced reduction in severe cases
+({r.severe:0.2f}, 95% CI: {rh.severe:0.2f}, {rl.severe:0.2f})
+and deaths
+({r.deaths:0.2f}, 95% CI: {rh.deaths:0.2f}, {rl.deaths:0.2f}).
+'''
+
+print(text.replace('\n', ' ').replace('-', '–').replace('best–fit', 'best-fit'))
+
 print('Done')
 
 
