@@ -8,6 +8,7 @@ import pandas as pd
 import sciris as sc
 import pylab as pl
 import statsmodels.formula.api as smfa
+import scipy.stats as st
 
 #%% Settings
 do_plot = 1
@@ -105,10 +106,16 @@ res.covbins = res.covbins[order]
 res.coverage = np.array([coverage[k] for k in res.covbins])
 res.both = np.array([both[k] for k in res.covbins])
 res.slope = sc.objdict()
-res.slope_best = sc.objdict()
 res.slope_low = sc.objdict()
 res.slope_high = sc.objdict()
+res.bslope = sc.objdict()
+res.bslope_low = sc.objdict()
+res.bslope_high = sc.objdict()
 res.cases, res.severe, res.deaths = [], [], []
+res.rho = sc.objdict()
+res.p = sc.objdict()
+res.brho = sc.objdict()
+res.bp = sc.objdict()
 for key in csdkeys:
     res[key] = sc.objdict()
     for subkey in ['tot_before', 'tot_after', 'agebin_before', 'agebin_after']:
@@ -130,11 +137,28 @@ for key in csdkeys:
 
     # Calculate slope and uncertainties
     data = pd.DataFrame(dict(x=res.coverage, y=res[key].change/100))
+    data = data.append(dict(x=0, y=0), ignore_index=True)
     fit = smfa.ols(formula="y ~ x - 1", data=data).fit()
     conf = fit.conf_int(alpha=0.05, cols=None)
     res.slope[key] = fit.params[0]
     res.slope_low[key]  = conf[0].values[0]
     res.slope_high[key] = conf[1].values[0]
+    rho, p = st.pearsonr(data.x, data.y)
+    res.rho[key] = rho
+    res.p[key] = p
+
+    # And again, for both doses
+    bdata = pd.DataFrame(dict(x=res.both, y=res[key].change/100))
+    bdata = bdata.append(dict(x=0, y=0), ignore_index=True)
+    bfit = smfa.ols(formula="y ~ x - 1", data=bdata).fit()
+    bconf = bfit.conf_int(alpha=0.05, cols=None)
+    res.bslope[key] = bfit.params[0]
+    res.bslope_low[key]  = bconf[0].values[0]
+    res.bslope_high[key] = bconf[1].values[0]
+    rho, p = st.pearsonr(bdata.x, bdata.y)
+    res.brho[key] = rho
+    res.bp[key] = p
+
 
 print('Results:')
 dfs = sc.objdict()
@@ -172,8 +196,8 @@ if do_plot:
     covlabels = []
     covbins = np.int64(res.covbins)
     for i in range(len(covbins)-1):
-        covlabels.append(f'Ages {covbins[i]}–{covbins[i+1]-1}') # ({res.coverage[i]*100:0.0f}%)
-    covlabels.append(f'Ages {covbins[-1]}+') #  ({res.coverage[-1]*100:0.0f}%)
+        covlabels.append(f'Age {covbins[i]}–{covbins[i+1]-1}') # ({res.coverage[i]*100:0.0f}%)
+    covlabels.append(f'Age {covbins[-1]}+') #  ({res.coverage[-1]*100:0.0f}%)
 
     colors = sc.vectocolor(res.covbins, reverse=True)
     for key in csdkeys:
@@ -187,24 +211,37 @@ if do_plot:
         # Plot points
         for i in range(n):
             label = covlabels[i] if key == 'cases' else None
+            blabel = '2 doses'if key == 'cases' and i == n-1 else None
             rcov = res.coverage[i]*100
             rbo = res.both[i]*100
             rch = res[key].change[i]
             col = colors[i]
             ax.plot(rcov, rch, 'o', c=col, label=label, markersize=8, zorder=10)
-            ax.plot(rbo, rch, 'd', c=col, alpha=0.5, markersize=6, zorder=9)
+            ax.plot(rbo, rch, 'd', c=col, label=blabel, alpha=0.5, markersize=6, zorder=9)
             ax.plot([rcov, rbo], [rch]*2, '--', c=col, lw=1, alpha=0.5, zorder=8)
 
         # Plot fit
         slope = res.slope[key]
         slope_low = res.slope_low[key]
         slope_high = res.slope_high[key]
-        slopelabel = f'Slope: {slope:0.2f} (95% CI: {slope_low:0.2f}, {slope_high:0.2f})'
+        slopelabel = f'Slope, ≥1 dose: {slope:0.2f} (95% CI: {slope_low:0.2f}, {slope_high:0.2f})'
         ax.plot(xlims, slope*xlims, label=slopelabel)
+
+        # Plot both dose fit
+        bslope = res.bslope[key]
+        bslope_low = res.bslope_low[key]
+        bslope_high = res.bslope_high[key]
+        bslopelabel = f'Slope, 2 doses: {bslope:0.2f} (95% CI: {bslope_low:0.2f}, {bslope_high:0.2f})'
+        ax.plot(xlims, bslope*xlims, label=bslopelabel)
 
         # Plot uncertainty
         y1 = slope_low*xlims
         y2 = slope_high*xlims
+        ax.fill_between(xlims, y1, y2, zorder=-10, alpha=0.1)
+
+        # Plot both dose uncertainty
+        y1 = bslope_low*xlims
+        y2 = bslope_high*xlims
         ax.fill_between(xlims, y1, y2, zorder=-10, alpha=0.1)
 
         # Other tidying
@@ -218,7 +255,9 @@ if do_plot:
         sc.boxoff(ax)
 
     if do_save:
-        pl.savefig('vaccine_efficacy.png')
+        pl.savefig('final_vaccine_efficacy.tif', dpi=600, format="tiff", pil_kwargs={"compression": "tiff_lzw"})
+        pl.savefig('final_vaccine_efficacy.png', dpi=300)
+        pl.savefig('final_vaccine_efficacy.pdf', dpi=300)
     if do_show:
         pl.show()
 
@@ -226,16 +265,22 @@ if do_plot:
 r = res.slope
 rl = res.slope_low
 rh = res.slope_high
+br = res.bslope
+brl = res.bslope_low
+brh = res.bslope_high
 text = f'''\
 As shown in Figure 6, vaccination was associated with a moderate reduction in the number of cases
-(best-fit slope {r.cases:0.2f}, 95% CI: {rh.cases:0.2f}, {rl.cases:0.2f}).
+(best-fit slope {r.cases:0.2f}, 95% CI: {rh.cases:0.2f}, {rl.cases:0.2f} for ≥1 dose;
+ best-fit slope {br.cases:0.2f}, 95% CI: {brh.cases:0.2f}, {brl.cases:0.2f} for 2 doses).
 However, it was associated with a pronounced reduction in severe cases
-({r.severe:0.2f}, 95% CI: {rh.severe:0.2f}, {rl.severe:0.2f})
+({r.severe:0.2f}, 95% CI: {rh.severe:0.2f}, {rl.severe:0.2f} for ≥1 dose;
+ {br.severe:0.2f}, 95% CI: {brh.severe:0.2f}, {brl.severe:0.2f} for 2 doses)
 and deaths
-({r.deaths:0.2f}, 95% CI: {rh.deaths:0.2f}, {rl.deaths:0.2f}).
+({r.deaths:0.2f}, 95% CI: {rh.deaths:0.2f}, {rl.deaths:0.2f} for ≥1 dose;
+ {br.deaths:0.2f}, 95% CI: {brh.deaths:0.2f}, {brl.deaths:0.2f} for 2 doses).
 '''
 
-print(text.replace('\n', ' ').replace('-', '–').replace('best–fit', 'best-fit'))
+print(text.replace('\n', ' ').replace('-', '–').replace('  ', ' '))
 
 print('Done')
 
