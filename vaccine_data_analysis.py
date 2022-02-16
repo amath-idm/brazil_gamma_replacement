@@ -40,7 +40,7 @@ for key in raw.keys():
     d[key] = sc.dcp(raw[key])
 
 # Rename columns from e.g.  '75 A 79' to '75' and drop missing values
-start_day = '2020-01-01'
+start_date = '2020-01-01'
 
 for key in csdkeys:
     cols = d[key].columns
@@ -50,7 +50,7 @@ for key in csdkeys:
 
 # Add a "day" column
 for key in allkeys:
-    d[key]['day'] = sc.day(sc.readdate(d[key].date.tolist()), start_day=start_day)
+    d[key]['day'] = sc.day(sc.readdate(d[key].date.tolist()), start_date=start_date)
 
 
 # Age calculations
@@ -143,9 +143,9 @@ for key in csdkeys:
     res.slope[key] = fit.params[0]
     res.slope_low[key]  = conf[0].values[0]
     res.slope_high[key] = conf[1].values[0]
-    rho, p = st.pearsonr(data.x, data.y)
-    res.rho[key] = rho
-    res.p[key] = p
+    # rho, p = st.pearsonr(data.x, data.y)
+    # res.rho[key] = rho
+    res.p[key] = fit.pvalues
 
     # And again, for both doses
     bdata = pd.DataFrame(dict(x=res.both, y=res[key].change/100))
@@ -155,9 +155,9 @@ for key in csdkeys:
     res.bslope[key] = bfit.params[0]
     res.bslope_low[key]  = bconf[0].values[0]
     res.bslope_high[key] = bconf[1].values[0]
-    rho, p = st.pearsonr(bdata.x, bdata.y)
-    res.brho[key] = rho
-    res.bp[key] = p
+    # rho, p = st.pearsonr(bdata.x, bdata.y)
+    # res.brho[key] = rho
+    res.bp[key] = bfit.pvalues
 
 
 print('Results:')
@@ -261,23 +261,26 @@ if do_plot:
     if do_show:
         pl.show()
 
+#%% Print out
 
 r = res.slope
+p = sc.objdict({k:res.p[k].values[0] for k in res.p.keys()})
 rl = res.slope_low
 rh = res.slope_high
 br = res.bslope
+bp = sc.objdict({k:res.bp[k].values[0] for k in res.bp.keys()})
 brl = res.bslope_low
 brh = res.bslope_high
 text = f'''\
-As shown in Figure 6, vaccination was associated with a moderate reduction in the number of cases
-(best-fit slope {r.cases:0.2f}, 95% CI: {rh.cases:0.2f}, {rl.cases:0.2f} for ≥1 dose;
- best-fit slope {br.cases:0.2f}, 95% CI: {brh.cases:0.2f}, {brl.cases:0.2f} for 2 doses).
+Vaccination was associated with a moderate reduction in the number of cases
+(best-fit slope by ordinary least squares for ≥1 dose: {r.cases:0.2f}, 95% CI [{rh.cases:0.2f}, {rl.cases:0.2f}], p={p.cases:0.2n};
+ best-fit slope for 2 doses: {br.cases:0.2f}, 95% CI [{brh.cases:0.2f}, {brl.cases:0.2f}], p={bp.cases:0.2n}) (Fig. 6b).
 However, it was associated with a pronounced reduction in severe cases
-({r.severe:0.2f}, 95% CI: {rh.severe:0.2f}, {rl.severe:0.2f} for ≥1 dose;
- {br.severe:0.2f}, 95% CI: {brh.severe:0.2f}, {brl.severe:0.2f} for 2 doses)
+(for ≥1 dose: {r.severe:0.2f}, 95% CI [{rh.severe:0.2f}, {rl.severe:0.2f}], p={p.severe:0.2n};
+for 2 doses: {br.severe:0.2f}, 95% CI [{brh.severe:0.2f}, {brl.severe:0.2f}], p={bp.severe:0.2n}) (Fig. 6c)
 and deaths
-({r.deaths:0.2f}, 95% CI: {rh.deaths:0.2f}, {rl.deaths:0.2f} for ≥1 dose;
- {br.deaths:0.2f}, 95% CI: {brh.deaths:0.2f}, {brl.deaths:0.2f} for 2 doses).
+(for ≥1 dose: {r.deaths:0.2f}, 95% CI [{rh.deaths:0.2f}, {rl.deaths:0.2f}], p={p.deaths:0.2n};
+for 2 doses: {br.deaths:0.2f}, 95% CI [{brh.deaths:0.2f}, {brl.deaths:0.2f}], p={bp.deaths:0.2n})  (Fig. 6d).
 '''
 
 print(text.replace('\n', ' ').replace('-', '–').replace('  ', ' '))
