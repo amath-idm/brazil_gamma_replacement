@@ -1,6 +1,6 @@
-# p1_replacement
+# Effects of SARS-CoV-2 Gamma lineage introduction and the impact of COVID-19 vaccination on the epidemiological landscape of São José do Rio Preto, Brazil
 
-This folder contains data and analysis scripts for the manuscript ["SARS-CoV P.1 variant introduction was associated with fast clade replacement and change in the epidemiological landscape in São José Do Rio Preto, Brazil"](https://www.medrxiv.org/content/10.1101/2021.07.28.21261228v1.full).
+This folder contains data and analysis scripts for the manuscript ["Effects of SARS-CoV-2 Gamma lineage introduction and the impact of COVID-19 vaccination on the epidemiological landscape of São José do Rio Preto, Brazil"](https://www.medrxiv.org/content/10.1101/2021.07.28.21261228v1.full).
 
 
 ## Structure
