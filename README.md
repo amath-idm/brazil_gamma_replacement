@@ -1,6 +1,6 @@
-# Effects of SARS-CoV-2 Gamma lineage introduction and the impact of COVID-19 vaccination on the epidemiological landscape of São José do Rio Preto, Brazil
+# Impact of SARS-CoV-2 Gamma lineage introduction and COVID-19 vaccination on the epidemiological landscape of a Brazilian city
 
-This folder contains data and analysis scripts for the manuscript ["Effects of SARS-CoV-2 Gamma lineage introduction and the impact of COVID-19 vaccination on the epidemiological landscape of São José do Rio Preto, Brazil"](https://www.medrxiv.org/content/10.1101/2021.07.28.21261228v1.full).
+This folder contains data and analysis scripts for the manuscript ["Impact of SARS-CoV-2 Gamma lineage introduction and COVID-19 vaccination on the epidemiological landscape of a Brazilian city"](https://www.nature.com/articles/s43856-022-00108-5).
 
 
 ## Structure
